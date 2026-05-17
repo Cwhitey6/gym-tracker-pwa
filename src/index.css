@@ -1,0 +1,129 @@
+/* src/index.css */
+
+/* Google Fonts MUST be first */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base dark theme defaults */
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    @apply bg-gym-bg text-white antialiased;
+    font-family: 'Inter', sans-serif;
+  }
+
+  /* Custom scrollbar to match dark theme */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-gym-surface;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gym-border rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gym-muted;
+  }
+
+  /* Smooth transitions on interactive elements */
+  button, a, input, select, textarea {
+    transition: all 0.15s ease;
+  }
+}
+
+/* Reusable component classes we'll use throughout the app */
+@layer components {
+
+  /* The main card — dark surface with subtle border */
+  .card {
+    @apply bg-gym-surface border border-gym-border rounded-2xl p-6;
+  }
+
+  /* Primary orange button */
+  .btn-primary {
+    @apply bg-gym-accent hover:bg-gym-accent-hover text-white font-medium
+           px-5 py-2.5 rounded-xl transition-all duration-150
+           active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Ghost button — just a border */
+  .btn-ghost {
+    @apply border border-gym-border hover:border-gym-muted text-gym-muted
+           hover:text-white font-medium px-5 py-2.5 rounded-xl
+           transition-all duration-150 active:scale-95;
+  }
+
+  /* Dark form input */
+  .input-dark {
+    @apply bg-gym-bg border border-gym-border rounded-xl px-4 py-3
+           text-white placeholder-gym-muted w-full
+           focus:outline-none focus:border-gym-accent
+           transition-colors duration-150;
+  }
+
+  /* Page animation wrapper */
+  .page-enter {
+    @apply animate-slide-up;
+  }
+}
+
+/* Add inside your existing @layer components { } block */
+
+/* Smooth page transitions */
+.page-enter {
+  animation: slideUp 0.2s ease-out;
+}
+
+/* Better focus rings */
+input:focus, textarea:focus, select:focus, button:focus-visible {
+  @apply outline-none ring-2 ring-gym-accent/40 ring-offset-1 ring-offset-gym-bg;
+}
+
+/* Number input — hide arrows */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Date input dark styling */
+input[type=date]::-webkit-calendar-picker-indicator {
+  filter: invert(0.5);
+  cursor: pointer;
+}
+
+/* iPhone safe area support */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Prevent iOS rubber-band scrolling on the body */
+html, body {
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Better tap targets on mobile */
+@media (max-width: 768px) {
+  button, a {
+    min-height: 44px;
+  }
+}
+
+.pt-safe {
+  padding-top: max(16px, env(safe-area-inset-top));
+}
+
+.page-header {
+  padding-top: max(16px, env(safe-area-inset-top));
+}
