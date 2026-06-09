@@ -1,22 +1,60 @@
+<!--
+  index.html
+
+  The single HTML file the entire app lives in. React mounts itself
+  into the <div id="root"> and takes over from there.
+
+  The meta tags in the head are mostly for iPhone PWA support so the app
+  looks and feels like a native app when installed to the home screen.
+-->
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8"/>
+
+    <!--
+      viewport-fit=cover lets the app extend into the iPhone notch area
+      user-scalable=no prevents the page from zooming when you tap an input
+    -->
     <meta name="viewport"
           content="width=device-width, initial-scale=1.0,
                    viewport-fit=cover, user-scalable=no"/>
+
+    <!-- tells iOS Safari this can be installed as a standalone app -->
     <meta name="apple-mobile-web-app-capable" content="yes"/>
+
+    <!-- makes the status bar transparent so the dark background shows through -->
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+
+    <!-- the name shown under the icon on the iPhone home screen -->
     <meta name="apple-mobile-web-app-title" content="Gym Tracker"/>
+
+    <!-- browser tab and mobile toolbar color -->
     <meta name="theme-color" content="#0f0f0f"/>
+
+    <!-- icon used when the apps added to iPhone home screen -->
     <link rel="apple-touch-icon" href="/apple-touch-icon.png"/>
+
     <title>Gym Tracker</title>
+
+    <!-- dark background before React loads so there's no white flash -->
     <style>
       body { background: #0f0f0f; margin: 0; }
     </style>
+
+    <!-- browser tab favicons at different sizes for different contexts -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico"/>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png"/>
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png"/>
   </head>
   <body>
+
+    <!-- React mounts the entire app into this div -->
     <div id="root"></div>
+
+    <!-- entry point - Vite loads main.jsx which boots React -->
     <script type="module" src="/src/main.jsx"></script>
+
   </body>
 </html>

@@ -1,28 +1,39 @@
-// src/pages/ExercisesPage.jsx
+/**
+ * ExercisesPage.jsx
+ * 
+ * Shows all exercises in a grid with search and filter by muscle group.
+ * You can add new exercises via the modal in the top right and delete
+ * existing ones by hovering a card and clicking the trash icon.
+ * 
+ * Each card shows the exercise name muscle group tag and whether it
+ * tracks weight x reps or time in seconds.
+ */
+
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Layout from '@/components/Layout'
 import { Search, Dumbbell, Plus, Trash2, X, Check } from 'lucide-react'
 import { getExercises, getMuscleGroups, addExercise, deleteExercise } from '@/db'
 
+// fallback colors in case an exercise doesn't have a color from the database
 const GROUP_COLORS = {
-  'Shoulders & Traps':       '#6366f1',
+  'Shoulders & Neck':        '#6366f1',
   'Back, Biceps & Forearms': '#06b6d4',
   'Chest & Triceps':         '#e85d04',
   'Legs':                    '#22c55e',
-  'Cardio':                  '#f59e0b',
+  'Cardio & Abs':            '#f59e0b',
 }
 
 export default function ExercisesPage() {
-  const navigate      = useNavigate()
+  const navigate = useNavigate()
+
   const [exercises,   setExercises]   = useState([])
   const [groups,      setGroups]      = useState([])
-  const [filtered,    setFiltered]    = useState([])
   const [loading,     setLoading]     = useState(true)
   const [search,      setSearch]      = useState('')
   const [activeGroup, setActiveGroup] = useState('All')
 
-  // Add modal state
+  // add exercise modal state
   const [showAdd,    setShowAdd]    = useState(false)
   const [newName,    setNewName]    = useState('')
   const [newGroupId, setNewGroupId] = useState('')
@@ -30,42 +41,50 @@ export default function ExercisesPage() {
   const [addError,   setAddError]   = useState('')
   const [addLoading, setAddLoading] = useState(false)
 
-  // Delete confirm state
-  const [deleteId,   setDeleteId]   = useState(null)
+  // which exercise id is pending deletion (shows confirm modal)
+  const [deleteId, setDeleteId] = useState(null)
 
-  useEffect(() => { load() }, [])
-
-  async function load() {
-    try {
-      const [exRes, grRes] = await Promise.all([
-        getExercises(),
-        getMuscleGroups(),
-      ])
-      if (exRes?.success) setExercises(exRes.data)
-      if (grRes?.success) {
-        setGroups(grRes.data)
-        if (!newGroupId && grRes.data.length) {
-          setNewGroupId(String(grRes.data[0].id))
+  // load on mount
+  useEffect(() => {
+    async function load() {
+      try {
+        const [exRes, grRes] = await Promise.all([
+          getExercises(),
+          getMuscleGroups(),
+        ])
+        if (exRes?.success) setExercises(exRes.data)
+        if (grRes?.success) {
+          setGroups(grRes.data)
+          // pre-select the first group in the add modal dropdown
+          // we set it unconditionally here since this only runs once on mount
+          if (grRes.data.length) {
+            setNewGroupId(String(grRes.data[0].id))
+          }
         }
+      } finally {
+        setLoading(false)
       }
-    } finally {
-      setLoading(false)
     }
+    load()
+  }, [])
+
+  // called after adding or deleting to refresh the list
+  // separate from the initial load since we don't need the loading spinner
+  async function reload() {
+    const [exRes, grRes] = await Promise.all([
+      getExercises(),
+      getMuscleGroups(),
+    ])
+    if (exRes?.success) setExercises(exRes.data)
+    if (grRes?.success) setGroups(grRes.data)
   }
 
-  // Filter by search + active group
-  useEffect(() => {
-    let result = exercises
-    if (activeGroup !== 'All') {
-      result = result.filter(e => e.groupName === activeGroup)
-    }
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      result = result.filter(e => e.name.toLowerCase().includes(q))
-    }
-    setFiltered(result)
-  }, [search, activeGroup, exercises])
+  // filtering is just a calculation based on existing state
+  const filtered = exercises
+    .filter(e => activeGroup === 'All' || e.groupName === activeGroup)
+    .filter(e => !search.trim() || e.name.toLowerCase().includes(search.toLowerCase()))
 
+  // open the add modal with a clean slate
   function openAdd() {
     setNewName('')
     setNewType('weight')
@@ -73,6 +92,7 @@ export default function ExercisesPage() {
     setShowAdd(true)
   }
 
+  // close the add modal and reset all its state
   function closeAdd() {
     setShowAdd(false)
     setNewName('')
@@ -80,6 +100,7 @@ export default function ExercisesPage() {
     setAddError('')
   }
 
+  // save the new exercise to the database
   async function handleAdd() {
     setAddError('')
     if (!newName.trim()) {
@@ -99,7 +120,7 @@ export default function ExercisesPage() {
       })
       if (res?.success) {
         closeAdd()
-        await load()
+        await reload()
       } else {
         setAddError(res?.error ?? 'Failed to add exercise.')
       }
@@ -108,19 +129,21 @@ export default function ExercisesPage() {
     }
   }
 
+  // permanently delete an exercise and reload the list
   async function handleDelete(id) {
     await deleteExercise(id)
     setDeleteId(null)
-    await load()
+    await reload()
   }
 
+  // "All" plus the 5 muscle group names for the filter pills
   const groupNames = ['All', ...Object.keys(GROUP_COLORS)]
 
   return (
     <Layout>
       <div className="p-4 sm:p-8 page-enter">
 
-        {/* Header */}
+        {/* page header */}
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-3xl font-bold text-white mb-1">Exercises</h1>
@@ -128,15 +151,12 @@ export default function ExercisesPage() {
               {exercises.length} exercises · click any to log a workout
             </p>
           </div>
-          <button
-            onClick={openAdd}
-            className="btn-primary flex items-center gap-2"
-          >
+          <button onClick={openAdd} className="btn-primary flex items-center gap-2">
             <Plus size={16}/> Add exercise
           </button>
         </div>
 
-        {/* ── Add exercise modal ───────────────────────────────────────── */}
+        {/* add exercise modal */}
         {showAdd && (
           <div
             className="fixed inset-0 bg-black/60 flex items-center
@@ -146,7 +166,6 @@ export default function ExercisesPage() {
             <div className="bg-gym-surface border border-gym-border
                             rounded-2xl p-6 w-full max-w-md animate-slide-up">
 
-              {/* Modal header */}
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-lg font-bold text-white">Add Exercise</h2>
                 <button
@@ -161,10 +180,9 @@ export default function ExercisesPage() {
 
               <div className="space-y-4">
 
-                {/* Exercise name */}
+                {/* exercise name input */}
                 <div>
-                  <label className="block text-xs font-medium
-                                    text-gym-muted mb-1.5">
+                  <label className="block text-xs font-medium text-gym-muted mb-1.5">
                     Exercise name
                   </label>
                   <input
@@ -178,10 +196,9 @@ export default function ExercisesPage() {
                   />
                 </div>
 
-                {/* Muscle group */}
+                {/* muscle group dropdown */}
                 <div>
-                  <label className="block text-xs font-medium
-                                    text-gym-muted mb-1.5">
+                  <label className="block text-xs font-medium text-gym-muted mb-1.5">
                     Muscle group
                   </label>
                   <select
@@ -195,10 +212,9 @@ export default function ExercisesPage() {
                   </select>
                 </div>
 
-                {/* Tracking type */}
+                {/* weight vs time toggle */}
                 <div>
-                  <label className="block text-xs font-medium
-                                    text-gym-muted mb-1.5">
+                  <label className="block text-xs font-medium text-gym-muted mb-1.5">
                     Tracking type
                   </label>
                   <div className="flex gap-2">
@@ -209,9 +225,8 @@ export default function ExercisesPage() {
                       <button
                         key={opt.value}
                         onClick={() => setNewType(opt.value)}
-                        className={`flex-1 py-2.5 rounded-xl text-sm
-                                    font-medium transition-all duration-150
-                                    border
+                        className={`flex-1 py-2.5 rounded-xl text-sm font-medium
+                                    transition-all duration-150 border
                                     ${newType === opt.value
                                       ? 'bg-gym-accent/10 border-gym-accent text-gym-accent'
                                       : 'border-gym-border text-gym-muted hover:text-white'
@@ -221,14 +236,15 @@ export default function ExercisesPage() {
                       </button>
                     ))}
                   </div>
+                  {/* description of what each type means */}
                   <p className="text-xs text-gym-muted mt-2">
                     {newType === 'time'
                       ? 'Sets will be logged in seconds (e.g. planks, cardio)'
-                      : 'Sets will be logged as weight × reps'}
+                      : 'Sets will be logged as weight x reps'}
                   </p>
                 </div>
 
-                {/* Error */}
+                {/* error message */}
                 {addError && (
                   <div className="bg-red-950/50 border border-red-900
                                   rounded-xl px-4 py-3 text-sm text-red-400
@@ -237,7 +253,7 @@ export default function ExercisesPage() {
                   </div>
                 )}
 
-                {/* Buttons */}
+                {/* cancel and confirm buttons */}
                 <div className="flex gap-3 pt-2">
                   <button onClick={closeAdd} className="btn-ghost flex-1">
                     Cancel
@@ -245,24 +261,23 @@ export default function ExercisesPage() {
                   <button
                     onClick={handleAdd}
                     disabled={addLoading}
-                    className="btn-primary flex-1 flex items-center
-                               justify-center gap-2"
+                    className="btn-primary flex-1 flex items-center justify-center gap-2"
                   >
                     {addLoading ? (
                       <span className="w-4 h-4 border-2 border-white/30
-                                       border-t-white rounded-full
-                                       animate-spin"/>
+                                       border-t-white rounded-full animate-spin"/>
                     ) : (
                       <><Check size={15}/> Add exercise</>
                     )}
                   </button>
                 </div>
+
               </div>
             </div>
           </div>
         )}
 
-        {/* ── Delete confirm modal ─────────────────────────────────────── */}
+        {/* delete confirm modal */}
         {deleteId && (
           <div
             className="fixed inset-0 bg-black/60 flex items-center
@@ -298,7 +313,7 @@ export default function ExercisesPage() {
           </div>
         )}
 
-        {/* Search */}
+        {/* search bar */}
         <div className="relative mb-4">
           <Search
             size={15}
@@ -314,7 +329,7 @@ export default function ExercisesPage() {
           />
         </div>
 
-        {/* Group filter pills */}
+        {/* muscle group filter pills */}
         <div className="flex gap-2 flex-wrap mb-6">
           {groupNames.map(g => (
             <button
@@ -332,15 +347,16 @@ export default function ExercisesPage() {
           ))}
         </div>
 
-        {/* Exercise grid */}
+        {/* exercise grid */}
         {loading ? (
+          // skeleton loaders while fetching
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {[...Array(12)].map((_, i) => (
-              <div key={i}
-                   className="h-28 bg-gym-surface rounded-2xl animate-pulse"/>
+              <div key={i} className="h-28 bg-gym-surface rounded-2xl animate-pulse"/>
             ))}
           </div>
         ) : filtered.length === 0 ? (
+          // empty state when search returns nothing
           <div className="card text-center py-16">
             <Search size={32} className="text-gym-muted mx-auto mb-3"/>
             <p className="text-white font-medium mb-1">No exercises found</p>
@@ -356,33 +372,37 @@ export default function ExercisesPage() {
 
               return (
                 <div key={ex.id} className="relative group">
+
+                  {/* exercise card navigates to the exercise detail page */}
                   <button
                     onClick={() => navigate(`/exercise/${ex.id}`)}
                     className="card text-left w-full hover:border-gym-muted
                                transition-all duration-150 active:scale-95"
                   >
-                    {/* Icon */}
-                    <div className="w-9 h-9 rounded-xl mb-3 flex items-center
-                                    justify-center"
-                         style={{ background: color + '22' }}>
+                    {/* colored icon */}
+                    <div
+                      className="w-9 h-9 rounded-xl mb-3 flex items-center justify-center"
+                      style={{ background: color + '22' }}
+                    >
                       <Dumbbell size={16} style={{ color }}/>
                     </div>
 
-                    {/* Name */}
+                    {/* exercise name */}
                     <p className="text-sm font-medium text-white mb-2
                                   group-hover:text-gym-accent transition-colors
                                   pr-6 leading-snug">
                       {ex.name}
                     </p>
 
-                    {/* Tags row */}
+                    {/* muscle group and type tags */}
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-xs px-2 py-0.5 rounded-full"
-                            style={{ background: color + '22', color }}>
+                      <span
+                        className="text-xs px-2 py-0.5 rounded-full"
+                        style={{ background: color + '22', color }}
+                      >
                         {ex.groupName}
                       </span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full
-                                        font-medium
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium
                                         ${isTime
                                           ? 'bg-blue-500/20 text-blue-400'
                                           : 'bg-white/5 text-gym-muted'
@@ -392,7 +412,7 @@ export default function ExercisesPage() {
                     </div>
                   </button>
 
-                  {/* Delete button — appears on hover */}
+                  {/* trash icon appears on hover to trigger the delete modal */}
                   <button
                     onClick={() => setDeleteId(ex.id)}
                     className="absolute top-3 right-3 opacity-0
@@ -402,11 +422,13 @@ export default function ExercisesPage() {
                   >
                     <Trash2 size={13}/>
                   </button>
+
                 </div>
               )
             })}
           </div>
         )}
+
       </div>
     </Layout>
   )

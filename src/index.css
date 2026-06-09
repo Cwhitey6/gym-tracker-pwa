@@ -1,24 +1,44 @@
-/* src/index.css */
+/**
+ * index.css
+ * 
+ * The global stylesheet for the entire app
+ * Broken into four sections:
+ * 
+ * 1. Google Fonts import (must be first)
+ * 2. Tailwind directives
+ * 3. Base layer - global resets and defaults applied to raw HTML elements
+ * 4. Components layer - reusable class names used throughout the app
+ *    like .card .btn-primary .input-dark etc
+ * 
+ * After that there are some utility styles for focus rings number inputs
+ * date inputs iPhone safe areas and mobile tap targets.
+ */
 
-/* Google Fonts MUST be first */
+/* Inter font from Google Fonts - must come before the Tailwind directives */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
+/* the three Tailwind layers that make all the utility classes work */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Base dark theme defaults */
+/* ─────────────────────────────────────────────────────────────────────────────
+   BASE LAYER
+   global styles applied to raw HTML elements
+   ───────────────────────────────────────────────────────────────────────────── */
 @layer base {
+
   * {
     box-sizing: border-box;
   }
 
+  /* dark background and white text as the default for the whole app */
   body {
     @apply bg-gym-bg text-white antialiased;
     font-family: 'Inter', sans-serif;
   }
 
-  /* Custom scrollbar to match dark theme */
+  /* custom scrollbar styled to match the dark theme */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -33,35 +53,38 @@
     @apply bg-gym-muted;
   }
 
-  /* Smooth transitions on interactive elements */
+  /* smooth transitions on all interactive elements by default */
   button, a, input, select, textarea {
     transition: all 0.15s ease;
   }
 }
 
-/* Reusable component classes we'll use throughout the app */
+/* ─────────────────────────────────────────────────────────────────────────────
+   COMPONENTS LAYER
+   reusable class names to use anywhere in the app
+   ───────────────────────────────────────────────────────────────────────────── */
 @layer components {
 
-  /* The main card — dark surface with subtle border */
+  /* the standard dark card used throughout every page */
   .card {
     @apply bg-gym-surface border border-gym-border rounded-2xl p-6;
   }
 
-  /* Primary orange button */
+  /* the main orange call-to-action button */
   .btn-primary {
     @apply bg-gym-accent hover:bg-gym-accent-hover text-white font-medium
            px-5 py-2.5 rounded-xl transition-all duration-150
            active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
-  /* Ghost button — just a border */
+  /* secondary button with just a border and no fill */
   .btn-ghost {
     @apply border border-gym-border hover:border-gym-muted text-gym-muted
            hover:text-white font-medium px-5 py-2.5 rounded-xl
            transition-all duration-150 active:scale-95;
   }
 
-  /* Dark form input */
+  /* dark styled text input used on forms throughout the app */
   .input-dark {
     @apply bg-gym-bg border border-gym-border rounded-xl px-4 py-3
            text-white placeholder-gym-muted w-full
@@ -69,61 +92,72 @@
            transition-colors duration-150;
   }
 
-  /* Page animation wrapper */
+  /* page enter animation - applied to the outermost div of each page */
   .page-enter {
     @apply animate-slide-up;
   }
 }
 
-/* Add inside your existing @layer components { } block */
+/* ─────────────────────────────────────────────────────────────────────────────
+   UTILITIES
+   one-off styles that don't fit neatly into base or components
+   ───────────────────────────────────────────────────────────────────────────── */
 
-/* Smooth page transitions */
-.page-enter {
-  animation: slideUp 0.2s ease-out;
-}
-
-/* Better focus rings */
+/* orange accent focus ring on all inputs and focused buttons */
 input:focus, textarea:focus, select:focus, button:focus-visible {
   @apply outline-none ring-2 ring-gym-accent/40 ring-offset-1 ring-offset-gym-bg;
 }
 
-/* Number input — hide arrows */
+/* hide the up/down arrows on number inputs - they look bad in dark mode */
 input[type=number]::-webkit-inner-spin-button,
 input[type=number]::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
 
-/* Date input dark styling */
+/* make the date picker icon visible on dark backgrounds */
 input[type=date]::-webkit-calendar-picker-indicator {
   filter: invert(0.5);
   cursor: pointer;
 }
 
-/* iPhone safe area support */
+/* ─────────────────────────────────────────────────────────────────────────────
+   IPHONE SAFE AREAS
+   prevents content from sitting behind the notch or home indicator
+   env(safe-area-inset-*) is an iPhone specific CSS value that returns
+   the height of the notch / home indicator on the current device
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* adds padding at the bottom so content clears the home indicator */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .pb-safe {
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
 
-/* Prevent iOS rubber-band scrolling on the body */
+/* used on the login page to push content below the status bar */
+.pt-safe {
+  padding-top: max(16px, env(safe-area-inset-top));
+}
+
+/* used on page headers that sit at the very top of the screen */
+.page-header {
+  padding-top: max(16px, env(safe-area-inset-top));
+}
+
+/* prevent iOS rubber band scrolling (the bounce effect at the top/bottom) */
 html, body {
   overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
 }
 
-/* Better tap targets on mobile */
+/* ─────────────────────────────────────────────────────────────────────────────
+   MOBILE TAP TARGETS
+   Apple recommends a minimum tap target size of 44x44px for accessibility
+   this enforces that on all buttons and links on mobile screens
+   ───────────────────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   button, a {
     min-height: 44px;
   }
-}
-
-.pt-safe {
-  padding-top: max(16px, env(safe-area-inset-top));
-}
-
-.page-header {
-  padding-top: max(16px, env(safe-area-inset-top));
 }

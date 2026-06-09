@@ -1,16 +1,30 @@
-// src/pages/LiveWorkoutPage.jsx
+/**
+ * LiveWorkoutPage.jsx
+ * 
+ * The live workout screen thats typically used when actively at the gym.
+ * A stopwatch starts as soon as you open it. You add exercises one by one
+ * via the picker modal then log sets in real time. Each set has a checkmark
+ * button to mark it as done which turns it green. When the workout is over there is 
+ * a Finish button which shows a summary and saves everything to the database.
+ * 
+ * Only sets marked as done get saved so set can be added in advance
+ * without worrying about empty ones being logged.
+ */
+
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '@/context/AuthContext'
+import { useAuth } from '@/context/useAuth'
 import Layout from '@/components/Layout'
 import {
-  Plus, Trash2, Check, X, ChevronDown,
-  Timer, Dumbbell, Zap
+  Plus, Trash2, Check, X,
+  Timer, Dumbbell
 } from 'lucide-react'
 import { getExercises, getMuscleGroups, createSession,
          createSet, updatePersonalRecord } from '@/db'
 
-// Stopwatch hook
+// A custom hook that runs a timer from the moment the component mounts.
+// Returns a formatted time string like "05:23" or "1:02:45" for longer sessions.
+// The interval is stored in a ref so it doesnt cause unnecessary re-renders.
 function useStopwatch() {
   const [seconds, setSeconds] = useState(0)
   const [running, setRunning] = useState(true)
@@ -18,23 +32,27 @@ function useStopwatch() {
 
   useEffect(() => {
     if (running) {
+      // tick every second
       ref.current = setInterval(() => setSeconds(s => s + 1), 1000)
     }
+    // clear the interval when the component unmounts or running changes
     return () => clearInterval(ref.current)
   }, [running])
 
+  // format seconds into h:mm:ss or mm:ss
   const fmt = (s) => {
-    const h = Math.floor(s / 3600)
-    const m = Math.floor((s % 3600) / 60)
+    const h   = Math.floor(s / 3600)
+    const m   = Math.floor((s % 3600) / 60)
     const sec = s % 60
     return h > 0
-      ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
-      : `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
+      ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+      : `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
   }
 
-  return { time: fmt(seconds), seconds, setRunning }
+  return { time: fmt(seconds), setRunning }
 }
 
+// fallback colors in case an exercise doesnt have one from the database
 const GROUP_COLORS = {
   'Shoulders & Traps':       '#6366f1',
   'Back, Biceps & Forearms': '#06b6d4',
@@ -44,68 +62,73 @@ const GROUP_COLORS = {
 }
 
 export default function LiveWorkoutPage() {
-  const { user }   = useAuth()
-  const navigate   = useNavigate()
-  const { time, seconds } = useStopwatch()
+  const { user } = useAuth()
+  const navigate = useNavigate()
+  const { time } = useStopwatch()
 
-  // All exercises from DB
+  // all exercises and groups loaded from the database for the picker
   const [allExercises, setAllExercises] = useState([])
   const [groups,       setGroups]       = useState([])
 
-  // Workout state — list of exercise blocks
-  // Each block: { exerciseId, exerciseName, color, sets: [{weight,reps,done}] }
-  const [blocks,    setBlocks]    = useState([])
+  // the list of exercise blocks currently in this workout
+  // each block has an exercise and a list of sets
+  const [blocks, setBlocks] = useState([])
 
-  // Exercise picker state
+  // exercise picker modal state
   const [showPicker,   setShowPicker]   = useState(false)
   const [pickerFilter, setPickerFilter] = useState('All')
   const [pickerSearch, setPickerSearch] = useState('')
 
-  // Finish modal
+  // finish modal state
   const [showFinish, setShowFinish] = useState(false)
   const [saving,     setSaving]     = useState(false)
   const [saved,      setSaved]      = useState(false)
 
+  // used when saving sessions to the database
   const today = new Date().toISOString().split('T')[0]
 
+  // load exercises and groups when the page opens
   useEffect(() => {
     async function load() {
       const [exRes, grRes] = await Promise.all([
         getExercises(),
         getMuscleGroups(),
       ])
-      if (exRes?.success)  setAllExercises(exRes.data)
-      if (grRes?.success)  setGroups(grRes.data)
+      if (exRes?.success) setAllExercises(exRes.data)
+      if (grRes?.success) setGroups(grRes.data)
     }
     load()
   }, [])
 
-  // ── Exercise picker filtering ────────────────────────────────────────────
+  // filter the exercise picker list based on search and selected group
+  // plain calculation not a useEffect since its just derived from existing state
   const pickerExercises = allExercises.filter(ex => {
-    const groupMatch = pickerFilter === 'All' || ex.groupName === pickerFilter
+    const groupMatch  = pickerFilter === 'All' || ex.groupName === pickerFilter
     const searchMatch = !pickerSearch.trim() ||
       ex.name.toLowerCase().includes(pickerSearch.toLowerCase())
     return groupMatch && searchMatch
   })
 
+  // add an exercise to the workout as a new block with one empty set
   function addExerciseToWorkout(ex) {
     setBlocks(prev => [...prev, {
-        exerciseId:   ex.id,
-        exerciseName: ex.name,
-        groupName:    ex.groupName,
-        color:        ex.color ?? GROUP_COLORS[ex.groupName] ?? '#e85d04',
-        type:         ex.type ?? 'weight',
-        sets: [{ weight: '', reps: '', duration: '', done: false }],
+      exerciseId:   ex.id,
+      exerciseName: ex.name,
+      groupName:    ex.groupName,
+      color:        ex.color ?? GROUP_COLORS[ex.groupName] ?? '#e85d04',
+      type:         ex.type ?? 'weight',
+      sets: [{ weight: '', reps: '', duration: '', done: false }],
     }])
     setShowPicker(false)
     setPickerSearch('')
   }
 
+  // remove an entire exercise block from the workout
   function removeBlock(blockIdx) {
     setBlocks(prev => prev.filter((_, i) => i !== blockIdx))
   }
 
-  // ── Set management ───────────────────────────────────────────────────────
+  // add a new set to a block pre-filling the weight from the previous set
   function addSet(blockIdx) {
     setBlocks(prev => prev.map((b, i) => {
       if (i !== blockIdx) return b
@@ -113,14 +136,16 @@ export default function LiveWorkoutPage() {
       return {
         ...b,
         sets: [...b.sets, {
-          weight: last?.weight || '',
-          reps:   last?.reps   || '',
-          done:   false,
+          weight:   last?.weight || '',
+          reps:     last?.reps   || '',
+          duration: '',
+          done:     false,
         }]
       }
     }))
   }
 
+  // update a single field on a single set within a block
   function updateSet(blockIdx, setIdx, field, value) {
     setBlocks(prev => prev.map((b, i) => {
       if (i !== blockIdx) return b
@@ -133,6 +158,8 @@ export default function LiveWorkoutPage() {
     }))
   }
 
+  // toggle a set between done and not done
+  // done sets turn green and their inputs get disabled
   function toggleSetDone(blockIdx, setIdx) {
     setBlocks(prev => prev.map((b, i) => {
       if (i !== blockIdx) return b
@@ -145,6 +172,7 @@ export default function LiveWorkoutPage() {
     }))
   }
 
+  // delete a single set row - always keeps at least one set per block
   function deleteSet(blockIdx, setIdx) {
     setBlocks(prev => prev.map((b, i) => {
       if (i !== blockIdx) return b
@@ -153,79 +181,88 @@ export default function LiveWorkoutPage() {
     }))
   }
 
-  // ── Stats ────────────────────────────────────────────────────────────────
+  // live stats shown in the header
+  // only counts sets that have been marked as done
   const totalSets = blocks.reduce(
     (sum, b) => sum + b.sets.filter(s => s.done).length, 0
   )
-  const totalVolume = blocks.reduce((sum, b) =>
-    sum + b.sets
+  const totalVolume = blocks.reduce(
+    (sum, b) => sum + b.sets
       .filter(s => s.done && s.weight && s.reps)
       .reduce((sv, s) => sv + Number(s.weight) * Number(s.reps), 0)
   , 0)
 
-  // ── Save workout ─────────────────────────────────────────────────────────
+  // saves the workout when you tap Finish
+  // only saves sets that are marked as done
+  // skips PR updates for time-based exercises since there's no weight to compare
   async function handleFinish() {
     setSaving(true)
     try {
-        for (const block of blocks) {
+      for (const block of blocks) {
         const isTime = block.type === 'time'
 
+        // filter to only completed sets with valid data
         const validSets = block.sets.filter(s => {
-            if (!s.done) return false
-            if (isTime) return Number(s.duration) > 0
-            return Number(s.weight) > 0 && Number(s.reps) > 0
+          if (!s.done) return false
+          if (isTime) return Number(s.duration) > 0
+          return Number(s.weight) > 0 && Number(s.reps) > 0
         })
 
         if (validSets.length === 0) continue
 
+        // create a session for this exercise
         const sessionRes = await createSession({
-            userId:     user.id,
-            exerciseId: block.exerciseId,
-            date:       today,
-            notes:      '',
+          userId:     user.id,
+          exerciseId: block.exerciseId,
+          date:       today,
+          notes:      '',
         })
         if (!sessionRes?.success) continue
 
+        // save each completed set
         for (let i = 0; i < validSets.length; i++) {
-            await createSet({
-            sessionId:  sessionRes.id,
-            setNumber:  i + 1,
-            reps:       isTime ? 0 : Number(validSets[i].reps),
-            weight:     isTime ? 0 : Number(validSets[i].weight),
-            duration:   isTime ? Number(validSets[i].duration) : 0,
-            })
+          await createSet({
+            sessionId: sessionRes.id,
+            setNumber: i + 1,
+            reps:      isTime ? 0 : Number(validSets[i].reps),
+            weight:    isTime ? 0 : Number(validSets[i].weight),
+            duration:  isTime ? Number(validSets[i].duration) : 0,
+          })
         }
 
-        // Only update PR for weight-based exercises
+        // update the PR if this was a weight-based exercise
         if (!isTime) {
-            const maxWeight = Math.max(...validSets.map(s => Number(s.weight)))
-            const maxSet    = validSets.find(s => Number(s.weight) === maxWeight)
-            await updatePersonalRecord({
+          const maxWeight = Math.max(...validSets.map(s => Number(s.weight)))
+          const maxSet    = validSets.find(s => Number(s.weight) === maxWeight)
+          await updatePersonalRecord({
             userId:     user.id,
             exerciseId: block.exerciseId,
             weight:     maxWeight,
             reps:       Number(maxSet.reps),
-            })
+          })
         }
-        }
-        setSaved(true)
-        setTimeout(() => navigate('/dashboard'), 1500)
+      }
+
+      // show success state then redirect to dashboard
+      setSaved(true)
+      setTimeout(() => navigate('/dashboard'), 1500)
     } catch (err) {
-        console.error('Live workout save error:', err)
+      console.error('Live workout save error:', err)
     } finally {
-        setSaving(false)
+      setSaving(false)
     }
-    }
+  }
 
   return (
     <Layout>
       <div className="p-4 sm:p-8 page-enter max-w-3xl">
 
-        {/* Header */}
+        {/* page header with timer and live stats */}
         <div className="flex flex-col sm:flex-row sm:items-center
-                sm:justify-between gap-4 mb-6">
+                        sm:justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl font-bold text-white">Live Workout</h1>
+            {/* running stopwatch */}
             <div className="flex items-center gap-2 mt-1">
               <Timer size={13} className="text-gym-accent"/>
               <span className="text-gym-accent font-mono text-sm font-medium">
@@ -234,7 +271,7 @@ export default function LiveWorkoutPage() {
             </div>
           </div>
 
-          {/* Live stats */}
+          {/* live set count volume and action buttons */}
           <div className="flex items-center gap-6">
             <div className="text-right">
               <p className="text-xl font-bold text-white">{totalSets}</p>
@@ -255,6 +292,7 @@ export default function LiveWorkoutPage() {
               >
                 <X size={14}/> Cancel
               </button>
+              {/* finish button is disabled until at least one set is done */}
               <button
                 onClick={() => setShowFinish(true)}
                 disabled={totalSets === 0}
@@ -266,7 +304,7 @@ export default function LiveWorkoutPage() {
           </div>
         </div>
 
-        {/* Empty state */}
+        {/* empty state when no exercises have been added yet */}
         {blocks.length === 0 && (
           <div className="card text-center py-16 mb-6">
             <Dumbbell size={36} className="text-gym-muted mx-auto mb-3"/>
@@ -283,17 +321,19 @@ export default function LiveWorkoutPage() {
           </div>
         )}
 
-        {/* Exercise blocks */}
+        {/* exercise blocks - one card per exercise */}
         <div className="space-y-4">
           {blocks.map((block, blockIdx) => (
             <div key={blockIdx} className="card">
 
-              {/* Block header */}
+              {/* block header shows exercise name and a remove button */}
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-xl flex items-center
-                                  justify-center flex-shrink-0"
-                       style={{ background: block.color + '22' }}>
+                  <div
+                    className="w-8 h-8 rounded-xl flex items-center
+                                justify-center flex-shrink-0"
+                    style={{ background: block.color + '22' }}
+                  >
                     <Dumbbell size={14} style={{ color: block.color }}/>
                   </div>
                   <div>
@@ -312,9 +352,8 @@ export default function LiveWorkoutPage() {
                 </button>
               </div>
 
-              {/* Column headers */}
-              <div className="grid grid-cols-[32px_1fr_1fr_40px_32px]
-                              gap-2 mb-2">
+              {/* column headers */}
+              <div className="grid grid-cols-[32px_1fr_1fr_40px_32px] gap-2 mb-2">
                 <span className="text-xs text-gym-muted text-center">Set</span>
                 <span className="text-xs text-gym-muted text-center">Weight</span>
                 <span className="text-xs text-gym-muted text-center">Reps</span>
@@ -322,136 +361,138 @@ export default function LiveWorkoutPage() {
                 <span/>
               </div>
 
-              {/* Sets */}
-            <div className="space-y-2 mb-3">
-            {block.sets.map((set, setIdx) => (
-                <div key={setIdx}
+              {/* set rows */}
+              <div className="space-y-2 mb-3">
+                {block.sets.map((set, setIdx) => (
+                  <div
+                    key={setIdx}
                     className={`flex items-center gap-2 rounded-xl px-2 py-1.5
                                 transition-colors duration-150
                                 ${set.done
-                                ? 'bg-green-950/30 border border-green-900/30'
-                                : ''
-                                }`}>
-
-                {/* Set number */}
-                <span className="text-xs text-gym-muted w-5 text-center flex-shrink-0">
-                    {setIdx + 1}
-                </span>
-
-                {block.type === 'time' ? (
-                    /* ── Time-based input ── */
-                    <div className="flex-1 flex items-center gap-2">
-                    <div className="relative flex-1">
-                        <input
-                        type="number"
-                        min="0"
-                        value={set.duration}
-                        onChange={e => updateSet(blockIdx, setIdx, 'duration',
-                            parseInt(e.target.value) || '')}
-                        placeholder="0"
-                        className={`input-dark text-center py-2 text-sm pr-10
-                                    ${set.done ? 'opacity-60' : ''}`}
-                        disabled={set.done}
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2
-                                        text-xs text-gym-muted pointer-events-none">
-                        sec
-                        </span>
-                    </div>
-                    {/* Convert helper */}
-                    {set.duration > 0 && (
-                        <span className="text-xs text-gym-muted flex-shrink-0">
-                        {set.duration >= 60
-                            ? `${Math.floor(set.duration/60)}m ${set.duration%60}s`
-                            : `${set.duration}s`}
-                        </span>
-                    )}
-                    </div>
-                ) : (
-                    /* ── Weight + reps inputs ── */
-                    <>
-                    <div className="relative flex-1">
-                        <input
-                        type="number"
-                        min="0"
-                        step="2.5"
-                        value={set.weight}
-                        onChange={e => updateSet(blockIdx, setIdx, 'weight',
-                            parseFloat(e.target.value) || '')}
-                        placeholder="lbs"
-                        className={`input-dark text-center py-2 text-sm pr-8
-                                    ${set.done ? 'opacity-60' : ''}`}
-                        disabled={set.done}
-                        />
-                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2
-                                        text-xs text-gym-muted pointer-events-none">
-                        lbs
-                        </span>
-                    </div>
-                    <span className="text-gym-muted text-xs flex-shrink-0">×</span>
-                    <div className="relative flex-1">
-                        <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={set.reps}
-                        onChange={e => updateSet(blockIdx, setIdx, 'reps',
-                            parseInt(e.target.value) || '')}
-                        placeholder="reps"
-                        className={`input-dark text-center py-2 text-sm pr-10
-                                    ${set.done ? 'opacity-60' : ''}`}
-                        disabled={set.done}
-                        />
-                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2
-                                        text-xs text-gym-muted pointer-events-none">
-                        reps
-                        </span>
-                    </div>
-                    </>
-                )}
-
-                {/* Done toggle */}
-                <button
-                    onClick={() => toggleSetDone(blockIdx, setIdx)}
-                    className={`w-8 h-8 rounded-lg flex items-center justify-center
-                                flex-shrink-0 transition-all duration-150
-                                ${set.done
-                                ? 'bg-green-500 text-white'
-                                : 'border border-gym-border text-gym-muted hover:border-green-500 hover:text-green-500'
+                                  ? 'bg-green-950/30 border border-green-900/30'
+                                  : ''
                                 }`}
-                >
-                    <Check size={13}/>
-                </button>
+                  >
+                    {/* set number */}
+                    <span className="text-xs text-gym-muted w-5 text-center flex-shrink-0">
+                      {setIdx + 1}
+                    </span>
 
-                {/* Delete set */}
-                <button
-                    onClick={() => deleteSet(blockIdx, setIdx)}
-                    className="text-gym-muted hover:text-red-400 transition-colors
-                            duration-150 w-7 h-7 flex items-center justify-center
-                            flex-shrink-0"
-                >
-                    <Trash2 size={12}/>
-                </button>
-                </div>
-            ))}
-            </div>
+                    {block.type === 'time' ? (
+                      // time-based input - shows seconds with a minutes conversion helper
+                      <div className="flex-1 flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <input
+                            type="number"
+                            min="0"
+                            value={set.duration}
+                            onChange={e => updateSet(blockIdx, setIdx, 'duration',
+                              parseInt(e.target.value) || '')}
+                            placeholder="0"
+                            className={`input-dark text-center py-2 text-sm pr-10
+                                        ${set.done ? 'opacity-60' : ''}`}
+                            disabled={set.done}
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2
+                                           text-xs text-gym-muted pointer-events-none">
+                            sec
+                          </span>
+                        </div>
+                        {/* shows "1m 30s" style conversion for longer durations */}
+                        {set.duration > 0 && (
+                          <span className="text-xs text-gym-muted flex-shrink-0">
+                            {set.duration >= 60
+                              ? `${Math.floor(set.duration / 60)}m ${set.duration % 60}s`
+                              : `${set.duration}s`}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      // weight and reps inputs for standard exercises
+                      <>
+                        <div className="relative flex-1">
+                          <input
+                            type="number"
+                            min="0"
+                            step="2.5"
+                            value={set.weight}
+                            onChange={e => updateSet(blockIdx, setIdx, 'weight',
+                              parseFloat(e.target.value) || '')}
+                            placeholder="lbs"
+                            className={`input-dark text-center py-2 text-sm pr-8
+                                        ${set.done ? 'opacity-60' : ''}`}
+                            disabled={set.done}
+                          />
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2
+                                           text-xs text-gym-muted pointer-events-none">
+                            lbs
+                          </span>
+                        </div>
+                        <span className="text-gym-muted text-xs flex-shrink-0">×</span>
+                        <div className="relative flex-1">
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={set.reps}
+                            onChange={e => updateSet(blockIdx, setIdx, 'reps',
+                              parseInt(e.target.value) || '')}
+                            placeholder="reps"
+                            className={`input-dark text-center py-2 text-sm pr-10
+                                        ${set.done ? 'opacity-60' : ''}`}
+                            disabled={set.done}
+                          />
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2
+                                           text-xs text-gym-muted pointer-events-none">
+                            reps
+                          </span>
+                        </div>
+                      </>
+                    )}
 
-              {/* Add set */}
+                    {/* checkmark button - turns green when tapped and locks the inputs */}
+                    <button
+                      onClick={() => toggleSetDone(blockIdx, setIdx)}
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center
+                                  flex-shrink-0 transition-all duration-150
+                                  ${set.done
+                                    ? 'bg-green-500 text-white'
+                                    : 'border border-gym-border text-gym-muted hover:border-green-500 hover:text-green-500'
+                                  }`}
+                    >
+                      <Check size={13}/>
+                    </button>
+
+                    {/* delete this set row */}
+                    <button
+                      onClick={() => deleteSet(blockIdx, setIdx)}
+                      className="text-gym-muted hover:text-red-400 transition-colors
+                                 duration-150 w-7 h-7 flex items-center justify-center
+                                 flex-shrink-0"
+                    >
+                      <Trash2 size={12}/>
+                    </button>
+
+                  </div>
+                ))}
+              </div>
+
+              {/* add another set to this block */}
               <button
                 onClick={() => addSet(blockIdx)}
-                className="flex items-center justify-center gap-2 w-full
-                           py-2 rounded-xl border border-dashed
-                           border-gym-border text-gym-muted text-xs
-                           hover:border-gym-accent hover:text-gym-accent
-                           transition-all duration-150"
+                className="flex items-center justify-center gap-2 w-full py-2
+                           rounded-xl border border-dashed border-gym-border
+                           text-gym-muted text-xs hover:border-gym-accent
+                           hover:text-gym-accent transition-all duration-150"
               >
                 <Plus size={12}/> Add set
               </button>
+
             </div>
           ))}
         </div>
 
-        {/* Add exercise button (when blocks exist) */}
+        {/* add another exercise button shown below the blocks */}
         {blocks.length > 0 && (
           <button
             onClick={() => setShowPicker(true)}
@@ -464,143 +505,146 @@ export default function LiveWorkoutPage() {
           </button>
         )}
 
-        {/* ── Exercise picker modal ────────────────────────────────────── */}
+        {/* exercise picker modal
+            slides up from the bottom on mobile centers on desktop */}
         {showPicker && (
-        <div
+          <div
             className="fixed inset-0 bg-black/60 flex items-end sm:items-center
                         justify-center z-50 animate-fade-in p-0 sm:p-4"
             onClick={e => { if (e.target === e.currentTarget) setShowPicker(false) }}
-        >
-            <div className="bg-gym-surface border border-gym-border rounded-t-2xl
-                            sm:rounded-2xl w-full max-w-lg flex flex-col
-                            animate-slide-up"
-                style={{ maxHeight: '80vh' }}>
-
-            {/* Modal header */}
-            <div className="flex items-center justify-between px-5 py-4
-                            border-b border-gym-border flex-shrink-0">
+          >
+            <div
+              className="bg-gym-surface border border-gym-border rounded-t-2xl
+                          sm:rounded-2xl w-full max-w-lg flex flex-col animate-slide-up"
+              style={{ maxHeight: '80vh' }}
+            >
+              {/* modal header */}
+              <div className="flex items-center justify-between px-5 py-4
+                              border-b border-gym-border flex-shrink-0">
                 <h2 className="text-base font-bold text-white">Add Exercise</h2>
                 <button
-                onClick={() => setShowPicker(false)}
-                className="text-gym-muted hover:text-white transition-colors
-                            w-8 h-8 flex items-center justify-center
-                            rounded-lg hover:bg-white/10"
+                  onClick={() => setShowPicker(false)}
+                  className="text-gym-muted hover:text-white transition-colors
+                             w-8 h-8 flex items-center justify-center
+                             rounded-lg hover:bg-white/10"
                 >
-                <X size={16}/>
+                  <X size={16}/>
                 </button>
-            </div>
+              </div>
 
-            {/* Search */}
-            <div className="px-4 py-3 border-b border-gym-border flex-shrink-0">
+              {/* search input */}
+              <div className="px-4 py-3 border-b border-gym-border flex-shrink-0">
                 <input
-                type="text"
-                value={pickerSearch}
-                onChange={e => setPickerSearch(e.target.value)}
-                placeholder="Search exercises..."
-                className="input-dark text-sm py-2.5"
-                autoFocus
+                  type="text"
+                  value={pickerSearch}
+                  onChange={e => setPickerSearch(e.target.value)}
+                  placeholder="Search exercises..."
+                  className="input-dark text-sm py-2.5"
+                  autoFocus
                 />
-            </div>
+              </div>
 
-            {/* Group filter — scrollable row */}
-            <div className="flex gap-2 px-4 py-2.5 overflow-x-auto flex-shrink-0
-                            border-b border-gym-border
-                            [&::-webkit-scrollbar]:hidden">
+              {/* horizontally scrollable muscle group filter pills
+                  scrollbar is hidden on all browsers for a cleaner look */}
+              <div className="flex gap-2 px-4 py-2.5 overflow-x-auto flex-shrink-0
+                              border-b border-gym-border
+                              [-ms-overflow-style:none]
+                              [scrollbar-width:none]
+                              [&::-webkit-scrollbar]:hidden">
                 {['All', ...groups.map(g => g.name)].map(g => (
-                <button
+                  <button
                     key={g}
                     onClick={() => setPickerFilter(g)}
                     className={`px-3 py-1.5 rounded-full text-xs font-medium
-                                whitespace-nowrap flex-shrink-0 transition-all
-                                duration-150
+                                whitespace-nowrap flex-shrink-0 transition-all duration-150
                                 ${pickerFilter === g
-                                ? 'bg-gym-accent text-white'
-                                : 'bg-gym-bg border border-gym-border text-gym-muted hover:text-white'
+                                  ? 'bg-gym-accent text-white'
+                                  : 'bg-gym-bg border border-gym-border text-gym-muted hover:text-white'
                                 }`}
-                >
+                  >
                     {g}
-                </button>
+                  </button>
                 ))}
-            </div>
+              </div>
 
-            {/* Exercise list — scrollable */}
-            <div className="overflow-y-auto flex-1 py-2">
+              {/* scrollable exercise list */}
+              <div className="overflow-y-auto py-2" style={{ flex: '1 1 0', minHeight: 0 }}>
                 {pickerExercises.length === 0 ? (
-                <div className="text-center py-10">
+                  <div className="text-center py-10">
                     <p className="text-gym-muted text-sm">No exercises found</p>
-                </div>
+                  </div>
                 ) : (
-                <div>
+                  <div>
                     {pickerExercises.map(ex => {
-                    const color = ex.color ?? GROUP_COLORS[ex.groupName] ?? '#e85d04'
-                    const alreadyAdded = blocks.some(b => b.exerciseId === ex.id)
-                    const isTime = ex.type === 'time'
+                      const color       = ex.color ?? GROUP_COLORS[ex.groupName] ?? '#e85d04'
+                      const alreadyAdded = blocks.some(b => b.exerciseId === ex.id)
+                      const isTime      = ex.type === 'time'
 
-                    return (
+                      return (
                         <button
-                        key={ex.id}
-                        onClick={() => !alreadyAdded && addExerciseToWorkout(ex)}
-                        disabled={alreadyAdded}
-                        className={`w-full flex items-center gap-3 px-4 py-3
-                                    text-left transition-all duration-150
-                                    ${alreadyAdded
+                          key={ex.id}
+                          onClick={() => !alreadyAdded && addExerciseToWorkout(ex)}
+                          disabled={alreadyAdded}
+                          className={`w-full flex items-center gap-3 px-4 py-3
+                                      text-left transition-all duration-150
+                                      ${alreadyAdded
                                         ? 'opacity-40 cursor-not-allowed'
                                         : 'hover:bg-white/5 active:bg-white/10'
-                                    }`}
+                                      }`}
                         >
-                        <div className="w-10 h-10 rounded-xl flex items-center
+                          <div
+                            className="w-10 h-10 rounded-xl flex items-center
                                         justify-center flex-shrink-0"
-                            style={{ background: color + '22' }}>
+                            style={{ background: color + '22' }}
+                          >
                             <Dumbbell size={16} style={{ color }}/>
-                        </div>
-                        <div className="flex-1 min-w-0">
+                          </div>
+                          <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-white truncate">
-                            {ex.name}
+                              {ex.name}
                             </p>
                             <p className="text-xs text-gym-muted">{ex.groupName}</p>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                            {/* Time vs weight badge */}
-                            <span className={`text-xs px-2 py-0.5 rounded-full
-                                            font-medium
-                                            ${isTime
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {/* badge showing whether this is a weight or time exercise */}
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium
+                                              ${isTime
                                                 ? 'bg-blue-500/20 text-blue-400'
                                                 : 'bg-gym-accent/20 text-gym-accent'
-                                            }`}>
-                            {isTime ? '⏱ time' : '🏋️ weight'}
+                                              }`}>
+                              {isTime ? '⏱ time' : '🏋️ weight'}
                             </span>
                             {alreadyAdded && (
-                            <span className="text-xs text-gym-muted">Added</span>
+                              <span className="text-xs text-gym-muted">Added</span>
                             )}
-                        </div>
+                          </div>
                         </button>
-                    )
+                      )
                     })}
-                </div>
+                  </div>
                 )}
+              </div>
+
             </div>
-            </div>
-        </div>
+          </div>
         )}
 
-        {/* ── Finish modal ─────────────────────────────────────────────── */}
+        {/* finish workout modal */}
         {showFinish && (
           <div className="fixed inset-0 bg-black/60 flex items-center
                           justify-center z-50 animate-fade-in p-4">
             <div className="bg-gym-surface border border-gym-border
                             rounded-2xl p-6 w-full max-w-sm animate-slide-up">
+
+              {/* success state shown after saving */}
               {saved ? (
                 <div className="text-center py-4">
                   <div className="w-14 h-14 rounded-full bg-green-500/20
                                   flex items-center justify-center mx-auto mb-4">
                     <Check size={28} className="text-green-400"/>
                   </div>
-                  <p className="text-white font-bold text-lg mb-1">
-                    Workout saved!
-                  </p>
-                  <p className="text-gym-muted text-sm">
-                    Redirecting to dashboard...
-                  </p>
+                  <p className="text-white font-bold text-lg mb-1">Workout saved!</p>
+                  <p className="text-gym-muted text-sm">Redirecting to dashboard...</p>
                 </div>
               ) : (
                 <>
@@ -608,7 +652,7 @@ export default function LiveWorkoutPage() {
                     Finish workout?
                   </h2>
 
-                  {/* Summary */}
+                  {/* workout summary */}
                   <div className="bg-gym-bg rounded-xl p-4 mb-5 space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="text-gym-muted">Duration</span>
@@ -616,9 +660,7 @@ export default function LiveWorkoutPage() {
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-gym-muted">Exercises</span>
-                      <span className="text-white font-medium">
-                        {blocks.length}
-                      </span>
+                      <span className="text-white font-medium">{blocks.length}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-gym-muted">Sets completed</span>
@@ -633,7 +675,7 @@ export default function LiveWorkoutPage() {
                   </div>
 
                   <p className="text-gym-muted text-xs mb-5">
-                    Only sets marked as done ✓ will be saved.
+                    Only sets marked as done will be saved.
                   </p>
 
                   <div className="flex gap-3">
@@ -646,8 +688,7 @@ export default function LiveWorkoutPage() {
                     <button
                       onClick={handleFinish}
                       disabled={saving}
-                      className="btn-primary flex-1 flex items-center
-                                 justify-center gap-2"
+                      className="btn-primary flex-1 flex items-center justify-center gap-2"
                     >
                       {saving ? (
                         <span className="w-4 h-4 border-2 border-white/30
@@ -659,6 +700,7 @@ export default function LiveWorkoutPage() {
                   </div>
                 </>
               )}
+
             </div>
           </div>
         )}

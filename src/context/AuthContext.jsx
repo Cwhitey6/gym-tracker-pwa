@@ -1,57 +1,67 @@
-// src/context/AuthContext.jsx
-// Context is React's way of sharing data across the entire app
-// without passing it as props through every component.
-// Think of it as a global variable, but done the React way.
+/**
+ * AuthContext.jsx
+ * 
+ * The AuthProvider component that wraps the entire app and holds
+ * the logged in state. Any component inside the provider can access
+ * the current user, login function, and logout function via useAuth().
+ * 
+ * Uses Supabase's built in auth system so the session persists
+ * across page refreshes and app restarts automatically.
+ */
 
-import { createContext, useContext, useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
+import { supabase } from '@/db/supabase'
+import { AuthContext } from './AuthContextDef'
 
-// 1. Create the context object
-const AuthContext = createContext(null)
-
-// 2. The Provider wraps your whole app and holds the state
+// "children" is the entire app that gets wrapped in this in main.jsx
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null)       // null = not logged in
-  const [loading, setLoading] = useState(true) // true while we check storage
+  // null when logged out, { id, username } when logged in
+  const [user, setUser] = useState(null)
+  // true while we're checking for an existing session on app load
+  const [loading, setLoading] = useState(true)
 
-  // On app startup, check if the user was already logged in
-  // (We save to sessionStorage so login persists through hot-reloads in dev)
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('gym-tracker-user')
-      if (saved) {
-        setUser(JSON.parse(saved))
+    // check if there's already an active session when the app loads
+    // this is what keeps you logged in when you reopen the app
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        // strip the fake email domain to get back just the username
+        const username = session.user.email.replace('@gymtracker.local', '').replace(/^\w/, c => c.toUpperCase())
+        setUser({ id: session.user.id, username })
       }
-    } catch {
-      // Corrupted storage — just stay logged out
-    } finally {
       setLoading(false)
-    }
+    })
+
+    // listen for auth changes while the app is open
+    // fires when you log in, log out, or the token refreshes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (session?.user) {
+          const username = session.user.email.replace('@gymtracker.local', '').replace(/^\w/, c => c.toUpperCase())
+          setUser({ id: session.user.id, username })
+        } else {
+          // session ended - clear the user
+          setUser(null)
+        }
+      }
+    )
+
+    // stop listening when the component unmounts
+    return () => subscription.unsubscribe()
   }, [])
 
-  const login = (userData) => {
-    setUser(userData)
-    localStorage.setItem('gym-tracker-user', JSON.stringify(userData))
-  }
+  // called after a successful sign in from LoginPage
+  const login = (userData) => setUser(userData)
 
-  const logout = () => {
+  // signs out of Supabase and clears the local user state
+  const logout = async () => {
+    await supabase.auth.signOut()
     setUser(null)
-    localStorage.removeItem('gym-tracker-user')
   }
 
-  // Expose user, login, logout to any component in the app
   return (
     <AuthContext.Provider value={{ user, login, logout, loading }}>
       {children}
     </AuthContext.Provider>
   )
-}
-
-// 3. Custom hook — components call this to access auth state
-// Usage:  const { user, login, logout } = useAuth()
-export function useAuth() {
-  const context = useContext(AuthContext)
-  if (!context) {
-    throw new Error('useAuth must be used inside <AuthProvider>')
-  }
-  return context
 }

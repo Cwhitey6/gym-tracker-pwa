@@ -1,19 +1,27 @@
-// src/pages/MuscleGroupPage.jsx
+/**
+ * MuscleGroupPage.jsx
+ * 
+ * Shows all exercises for a specific muscle group in a grid.
+ * Page is viewed by clicking one of the muscle group buttons on the dashboard.
+ * Tapping any exercise card takes leads to that exercise's detail page
+ * where sets and history can be viewed.
+ */
+
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useAuth } from '@/context/AuthContext'
 import Layout from '@/components/Layout'
 import { ArrowLeft, Dumbbell } from 'lucide-react'
 import { getMuscleGroups, getExercises } from '@/db'
 
 export default function MuscleGroupPage() {
-  const { id }      = useParams()
-  const { user }    = useAuth()
-  const navigate    = useNavigate()
+  const { id }  = useParams()  // the muscle group id from the URL
+  const navigate = useNavigate()
+
   const [group,     setGroup]     = useState(null)
   const [exercises, setExercises] = useState([])
   const [loading,   setLoading]   = useState(true)
 
+  // load the group info and its exercises when the page opens
   useEffect(() => {
     async function load() {
       try {
@@ -22,10 +30,11 @@ export default function MuscleGroupPage() {
           getExercises(Number(id)),
         ])
         if (groupsRes?.success) {
+          // find the specific group that matches the id in the URL
           setGroup(groupsRes.data.find(g => g.id === Number(id)))
         }
         if (exRes?.success) setExercises(exRes.data)
-      } catch(err) {
+      } catch (err) {
         console.error('MuscleGroupPage error:', err)
       } finally {
         setLoading(false)
@@ -38,6 +47,7 @@ export default function MuscleGroupPage() {
     <Layout>
       <div className="p-4 sm:p-8 page-enter">
 
+        {/* back button goes to the dashboard */}
         <button
           onClick={() => navigate('/dashboard')}
           className="flex items-center gap-2 text-gym-muted hover:text-white
@@ -46,12 +56,15 @@ export default function MuscleGroupPage() {
           <ArrowLeft size={16}/> Back to dashboard
         </button>
 
+        {/* muscle group header with colored icon */}
         <div className="flex items-center gap-4 mb-8">
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
-               style={{
-                 background: (group?.color ?? '#e85d04') + '22',
-                 border: `1px solid ${group?.color ?? '#e85d04'}44`
-               }}>
+          <div
+            className="w-12 h-12 rounded-2xl flex items-center justify-center"
+            style={{
+              background: (group?.color ?? '#e85d04') + '22',
+              border:     `1px solid ${group?.color ?? '#e85d04'}44`,
+            }}
+          >
             <Dumbbell size={22} style={{ color: group?.color ?? '#e85d04' }}/>
           </div>
           <div>
@@ -64,21 +77,21 @@ export default function MuscleGroupPage() {
           </div>
         </div>
 
+        {/* skeleton loaders while fetching */}
         {loading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {[...Array(6)].map((_, i) => (
-              <div key={i}
-                   className="h-28 bg-gym-surface rounded-2xl animate-pulse"/>
+              <div key={i} className="h-28 bg-gym-surface rounded-2xl animate-pulse"/>
             ))}
           </div>
         ) : exercises.length === 0 ? (
+          // empty state if no exercises found for this group
           <div className="card text-center py-12">
             <p className="text-white font-medium mb-1">No exercises found</p>
-            <p className="text-gym-muted text-sm">
-              Group ID: {id}
-            </p>
+            <p className="text-gym-muted text-sm">Group ID: {id}</p>
           </div>
         ) : (
+          // exercise grid - each card navigates to the exercise detail page
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {exercises.map(ex => (
               <button
@@ -87,12 +100,15 @@ export default function MuscleGroupPage() {
                 className="card text-left hover:border-gym-muted
                            transition-all duration-150 active:scale-95 group"
               >
-                <div className="w-8 h-8 rounded-xl mb-3 flex items-center
-                                justify-center"
-                     style={{ background: (group?.color ?? '#e85d04') + '22' }}>
-                  <Dumbbell size={16}
-                            style={{ color: group?.color ?? '#e85d04' }}/>
+                {/* colored icon matching the muscle group */}
+                <div
+                  className="w-8 h-8 rounded-xl mb-3 flex items-center justify-center"
+                  style={{ background: (group?.color ?? '#e85d04') + '22' }}
+                >
+                  <Dumbbell size={16} style={{ color: group?.color ?? '#e85d04' }}/>
                 </div>
+
+                {/* exercise name turns orange on hover */}
                 <p className="text-sm font-medium text-white
                               group-hover:text-gym-accent transition-colors">
                   {ex.name}
