@@ -212,7 +212,8 @@ function SessionRow({ session }) {
                     rounded-xl border border-gym-border hover:border-gym-muted
                     transition-colors duration-150">
       <div className="flex items-center gap-3 min-w-0">
-        <div className="w-2 h-2 rounded-full bg-gym-accent flex-shrink-0"/>
+        <div className="w-2 h-2 rounded-full flex-shrink-0"
+             style={{ backgroundColor: session.color ?? '#e85d04' }}/>
         <div className="min-w-0">
           <p className="text-sm font-medium text-white truncate">{session.exerciseName}</p>
           <p className="text-xs text-gym-muted truncate">{session.groupName}</p>

@@ -149,7 +149,7 @@ export async function getSessions(userId) {
         *,
         exercises (
           name,
-          muscle_groups ( name )
+          muscle_groups ( name, color )
         ),
         sets ( id, weight, reps, duration )
       `)
@@ -173,6 +173,7 @@ export async function getSessions(userId) {
         setCount:     s.sets?.length ?? 0,
         volume,
         sets:         s.sets ?? [],
+        color:        s.exercises?.muscle_groups?.color ?? '#e85d04',
       }
     })
 

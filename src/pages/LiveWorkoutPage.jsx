@@ -511,12 +511,13 @@ export default function LiveWorkoutPage() {
           <div
             className="fixed inset-0 bg-black/60 flex items-end sm:items-center
                         justify-center z-50 animate-fade-in p-0 sm:p-4"
+            style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
             onClick={e => { if (e.target === e.currentTarget) setShowPicker(false) }}
           >
             <div
               className="bg-gym-surface border border-gym-border rounded-t-2xl
                           sm:rounded-2xl w-full max-w-lg flex flex-col animate-slide-up"
-              style={{ maxHeight: '80vh' }}
+              style={{ maxHeight: '70vh', height: '70vh' }}
             >
               {/* modal header */}
               <div className="flex items-center justify-between px-5 py-4
