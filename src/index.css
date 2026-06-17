@@ -161,10 +161,3 @@ html, body {
     min-height: 44px;
   }
 }
-
-/* prevent keyboard from resizing the viewport on iPhone */
-@supports (height: 100dvh) {
-  .fixed {
-    height: 100dvh;
-  }
-}
