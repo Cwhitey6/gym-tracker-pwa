@@ -1,13 +1,17 @@
 /**
  * LiveWorkoutPage.jsx
  * 
- * The live workout screen thats typically used when actively at the gym.
- * A stopwatch starts as soon as you open it. You add exercises one by one
+ * Lets you log a workout two ways
+ * Live mode runs a stopwatch in real time while youre actually at the gym
+ * Log past workout mode lets you pick a date plus a start and end time
+ * for a workout you already did and forgot to log
+ * 
+ * Everything else works the same in both modes. Add exercises one by one
  * via the picker modal then log sets in real time. Each set has a checkmark
  * button to mark it as done which turns it green. When the workout is over there is 
  * a Finish button which shows a summary and saves everything to the database.
  * 
- * Only sets marked as done get saved so set can be added in advance
+ * Only sets marked as done get saved so sets can be added in advance
  * without worrying about empty ones being logged.
  */
 
@@ -17,27 +21,26 @@ import { useAuth } from '@/context/useAuth'
 import Layout from '@/components/Layout'
 import {
   Plus, Trash2, Check, X,
-  Timer, Dumbbell
+  Timer, Dumbbell, Calendar, Clock
 } from 'lucide-react'
 import { getExercises, getMuscleGroups, createSession,
          createSet, updatePersonalRecord } from '@/db'
 
-// A custom hook that runs a timer from the moment the component mounts.
+// A custom hook that runs a timer from the moment its activated.
 // Returns a formatted time string like "05:23" or "1:02:45" for longer sessions.
-// The interval is stored in a ref so it doesnt cause unnecessary re-renders.
-function useStopwatch() {
+// Only ticks while "active" is true so it can be paused when youre in past mode.
+function useStopwatch(active) {
   const [seconds, setSeconds] = useState(0)
-  const [running, setRunning] = useState(true)
   const ref = useRef(null)
 
   useEffect(() => {
-    if (running) {
+    if (active) {
       // tick every second
       ref.current = setInterval(() => setSeconds(s => s + 1), 1000)
     }
-    // clear the interval when the component unmounts or running changes
+    // clear the interval when the component unmounts or active changes
     return () => clearInterval(ref.current)
-  }, [running])
+  }, [active])
 
   // format seconds into h:mm:ss or mm:ss
   const fmt = (s) => {
@@ -49,22 +52,53 @@ function useStopwatch() {
       : `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
   }
 
-  return { time: fmt(seconds), setRunning }
+  return fmt(seconds)
 }
 
 // fallback colors in case an exercise doesnt have one from the database
 const GROUP_COLORS = {
-  'Shoulders & Traps':       '#6366f1',
+  'Shoulders & Neck':        '#6366f1',
   'Back, Biceps & Forearms': '#06b6d4',
   'Chest & Triceps':         '#e85d04',
   'Legs':                    '#22c55e',
-  'Cardio':                  '#f59e0b',
+  'Cardio & Abs':            '#f59e0b',
+}
+
+// turns a start and end time like "14:30" and "15:15" into a readable
+// duration like "45 min" or "1h 30m". used in log past workout mode
+// since theres no live stopwatch running to track the duration
+function calcDurationLabel(start, end) {
+  if (!start || !end) return null
+  const [sh, sm] = start.split(':').map(Number)
+  const [eh, em] = end.split(':').map(Number)
+  let minutes = (eh * 60 + em) - (sh * 60 + sm)
+  if (minutes < 0) minutes += 24 * 60  // handles workouts that cross midnight
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return h > 0 ? `${h}h ${m}m` : `${m} min`
 }
 
 export default function LiveWorkoutPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
-  const { time } = useStopwatch()
+
+  // 'live' or 'past' - decides which header controls and time inputs show
+  const [mode, setMode] = useState('live')
+
+  // live mode runs the stopwatch, past mode does not
+  const liveTime = useStopwatch(mode === 'live')
+
+  // past mode uses a manually picked date plus a start and end time
+  // defaults to today since most past logs are still from the same day
+  // start and end time default to whatever was used last time since
+  // most people work out around the same time most days
+  const [pastDate,  setPastDate]  = useState(new Date().toISOString().split('T')[0])
+  const [startTime, setStartTime] = useState(
+    () => localStorage.getItem('lastWorkoutStartTime') || ''
+  )
+  const [endTime,   setEndTime]   = useState(
+    () => localStorage.getItem('lastWorkoutEndTime') || ''
+)
 
   // all exercises and groups loaded from the database for the picker
   const [allExercises, setAllExercises] = useState([])
@@ -84,8 +118,15 @@ export default function LiveWorkoutPage() {
   const [saving,     setSaving]     = useState(false)
   const [saved,      setSaved]      = useState(false)
 
-  // used when saving sessions to the database
-  const today = new Date().toISOString().split('T')[0]
+  // the date used when saving to the database
+  // todays date in live mode, whatever was picked in past mode
+  const sessionDate = mode === 'live'
+    ? new Date().toISOString().split('T')[0]
+    : pastDate
+
+  // the duration shown in the finish summary
+  // the running stopwatch in live mode, the calculated gap in past mode
+  const durationLabel = mode === 'live' ? liveTime : calcDurationLabel(startTime, endTime)
 
   // load exercises and groups when the page opens
   useEffect(() => {
@@ -194,9 +235,17 @@ export default function LiveWorkoutPage() {
 
   // saves the workout when you tap Finish
   // only saves sets that are marked as done
-  // skips PR updates for time-based exercises since there's no weight to compare
+  // skips PR updates for time-based exercises since theres no weight to compare
   async function handleFinish() {
     setSaving(true)
+
+    // remember the start and end time for next time, only in past mode
+    // since live mode doesnt use these fields at all
+    if (mode === 'past' && startTime && endTime) {
+      localStorage.setItem('lastWorkoutStartTime', startTime)
+      localStorage.setItem('lastWorkoutEndTime', endTime)
+    }
+
     try {
       for (const block of blocks) {
         const isTime = block.type === 'time'
@@ -210,11 +259,12 @@ export default function LiveWorkoutPage() {
 
         if (validSets.length === 0) continue
 
-        // create a session for this exercise
+        // create a session for this exercise using the date from
+        // whichever mode is currently active
         const sessionRes = await createSession({
           userId:     user.id,
           exerciseId: block.exerciseId,
-          date:       today,
+          date:       sessionDate,
           notes:      '',
         })
         if (!sessionRes?.success) continue
@@ -247,7 +297,7 @@ export default function LiveWorkoutPage() {
       setSaved(true)
       setTimeout(() => navigate('/dashboard'), 1500)
     } catch (err) {
-      console.error('Live workout save error:', err)
+      console.error('Workout save error:', err)
     } finally {
       setSaving(false)
     }
@@ -257,51 +307,136 @@ export default function LiveWorkoutPage() {
     <Layout>
       <div className="p-4 sm:p-8 page-enter max-w-3xl">
 
-        {/* page header with timer and live stats */}
-        <div className="flex flex-col sm:flex-row sm:items-center
-                        sm:justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-white">Live Workout</h1>
-            {/* running stopwatch */}
-            <div className="flex items-center gap-2 mt-1">
-              <Timer size={13} className="text-gym-accent"/>
-              <span className="text-gym-accent font-mono text-sm font-medium">
-                {time}
-              </span>
+        {/* page header with title timer or duration and live stats */}
+        <div className="flex flex-col gap-4 mb-6">
+
+          <div className="flex flex-col sm:flex-row sm:items-center
+                          sm:justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-white">
+                {mode === 'live' ? 'Live Workout' : 'Log Workout'}
+              </h1>
+
+              {/* live mode shows the running stopwatch */}
+              {mode === 'live' ? (
+                <div className="flex items-center gap-2 mt-1">
+                  <Timer size={13} className="text-gym-accent"/>
+                  <span className="text-gym-accent font-mono text-sm font-medium">
+                    {liveTime}
+                  </span>
+                </div>
+              ) : (
+                // past mode shows the calculated duration once both times are set
+                durationLabel && (
+                  <div className="flex items-center gap-2 mt-1">
+                    <Clock size={13} className="text-gym-accent"/>
+                    <span className="text-gym-accent text-sm font-medium">
+                      {durationLabel}
+                    </span>
+                  </div>
+                )
+              )}
+            </div>
+
+            {/* live set count volume and action buttons */}
+            <div className="flex items-center gap-6">
+              <div className="text-right">
+                <p className="text-xl font-bold text-white">{totalSets}</p>
+                <p className="text-xs text-gym-muted">sets done</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xl font-bold text-white">
+                  {totalVolume > 0
+                    ? `${Math.round(totalVolume).toLocaleString()}`
+                    : '0'}
+                </p>
+                <p className="text-xs text-gym-muted">lbs volume</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => navigate(-1)}
+                  className="btn-ghost flex items-center gap-2 text-sm"
+                >
+                  <X size={14}/> Cancel
+                </button>
+                {/* finish button is disabled until at least one set is done */}
+                <button
+                  onClick={() => setShowFinish(true)}
+                  disabled={totalSets === 0}
+                  className="btn-primary flex items-center gap-2 text-sm"
+                >
+                  <Check size={14}/> Finish
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* live set count volume and action buttons */}
-          <div className="flex items-center gap-6">
-            <div className="text-right">
-              <p className="text-xl font-bold text-white">{totalSets}</p>
-              <p className="text-xs text-gym-muted">sets done</p>
-            </div>
-            <div className="text-right">
-              <p className="text-xl font-bold text-white">
-                {totalVolume > 0
-                  ? `${Math.round(totalVolume).toLocaleString()}`
-                  : '0'}
-              </p>
-              <p className="text-xs text-gym-muted">lbs volume</p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => navigate(-1)}
-                className="btn-ghost flex items-center gap-2 text-sm"
-              >
-                <X size={14}/> Cancel
-              </button>
-              {/* finish button is disabled until at least one set is done */}
-              <button
-                onClick={() => setShowFinish(true)}
-                disabled={totalSets === 0}
-                className="btn-primary flex items-center gap-2 text-sm"
-              >
-                <Check size={14}/> Finish
-              </button>
-            </div>
+          {/* mode toggle - live workout vs logging a past workout */}
+          <div className="flex bg-gym-bg rounded-xl p-1 w-fit">
+            <button
+              onClick={() => setMode('live')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-150
+                          ${mode === 'live'
+                            ? 'bg-gym-surface text-white shadow-sm'
+                            : 'text-gym-muted hover:text-white'
+                          }`}
+            >
+              Live workout
+            </button>
+            <button
+              onClick={() => setMode('past')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-150
+                          ${mode === 'past'
+                            ? 'bg-gym-surface text-white shadow-sm'
+                            : 'text-gym-muted hover:text-white'
+                          }`}
+            >
+              Log past workout
+            </button>
           </div>
+
+          {/* date and time pickers - only shown in past mode */}
+          {mode === 'past' && (
+            <div className="card flex flex-col sm:flex-row gap-4 animate-fade-in">
+              <div className="flex-1">
+                <label className="flex items-center gap-1.5 text-xs font-medium
+                                  text-gym-muted mb-1.5">
+                  <Calendar size={12}/> Date
+                </label>
+                <input
+                  type="date"
+                  value={pastDate}
+                  onChange={e => setPastDate(e.target.value)}
+                  className="input-dark text-sm py-3 [color-scheme:dark]"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="flex items-center gap-1.5 text-xs font-medium
+                                  text-gym-muted mb-1.5">
+                  <Clock size={12}/> Start time
+                </label>
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={e => setStartTime(e.target.value)}
+                  className="input-dark text-sm py-3 [color-scheme:dark]"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="flex items-center gap-1.5 text-xs font-medium
+                                  text-gym-muted mb-1.5">
+                  <Clock size={12}/> End time
+                </label>
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={e => setEndTime(e.target.value)}
+                  className="input-dark text-sm py-3 [color-scheme:dark]"
+                />
+              </div>
+            </div>
+          )}
+
         </div>
 
         {/* empty state when no exercises have been added yet */}
@@ -310,7 +445,7 @@ export default function LiveWorkoutPage() {
             <Dumbbell size={36} className="text-gym-muted mx-auto mb-3"/>
             <p className="text-white font-medium mb-1">No exercises added yet</p>
             <p className="text-gym-muted text-sm mb-6">
-              Add exercises to start tracking your live workout
+              Add exercises to start tracking your workout
             </p>
             <button
               onClick={() => setShowPicker(true)}
@@ -657,7 +792,7 @@ export default function LiveWorkoutPage() {
                   <div className="bg-gym-bg rounded-xl p-4 mb-5 space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="text-gym-muted">Duration</span>
-                      <span className="text-white font-medium">{time}</span>
+                      <span className="text-white font-medium">{durationLabel ?? '—'}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-gym-muted">Exercises</span>
