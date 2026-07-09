@@ -158,7 +158,7 @@ export default function LiveWorkoutPage() {
       groupName:    ex.groupName,
       color:        ex.color ?? GROUP_COLORS[ex.groupName] ?? '#e85d04',
       type:         ex.type ?? 'weight',
-      sets: [{ weight: '', reps: '', duration: '', done: false }],
+      sets: [{ weight: '', reps: '', minutes: '', seconds: '', duration: 0, done: false }],
     }])
     setShowPicker(false)
     setPickerSearch('')
@@ -177,9 +177,11 @@ export default function LiveWorkoutPage() {
       return {
         ...b,
         sets: [...b.sets, {
-          weight:   last?.weight || '',
-          reps:     last?.reps   || '',
-          duration: '',
+          weight:   last?.weight  || '',
+          reps:     last?.reps    || '',
+          minutes:  last?.minutes || '',
+          seconds:  last?.seconds || '',
+          duration: last?.duration || 0,
           done:     false,
         }]
       }
@@ -514,33 +516,62 @@ export default function LiveWorkoutPage() {
                     </span>
 
                     {block.type === 'time' ? (
-                      // time-based input - shows seconds with a minutes conversion helper
+                      // time-based input - split into minutes and seconds fields
+                      // internally still stores total seconds so the database doesnt change
                       <div className="flex-1 flex items-center gap-2">
+                        {/* minutes input */}
                         <div className="relative flex-1">
                           <input
                             type="number"
                             min="0"
-                            value={set.duration}
-                            onChange={e => updateSet(blockIdx, setIdx, 'duration',
-                              parseInt(e.target.value) || '')}
+                            value={set.done
+                              ? Math.floor((set.duration || 0) / 60)
+                              : set.minutes ?? ''}
+                            onChange={e => {
+                              const mins = parseInt(e.target.value) || 0
+                              const secs = set.seconds ?? 0
+                              // update both the display fields and the total seconds
+                              updateSet(blockIdx, setIdx, 'minutes', e.target.value === '' ? '' : mins)
+                              updateSet(blockIdx, setIdx, 'duration', mins * 60 + secs)
+                            }}
                             placeholder="0"
-                            className={`input-dark text-center py-2 text-sm pr-10
+                            className={`input-dark text-center py-2 text-sm pr-8
                                         ${set.done ? 'opacity-60' : ''}`}
                             disabled={set.done}
                           />
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2
-                                           text-xs text-gym-muted pointer-events-none">
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2
+                                          text-xs text-gym-muted pointer-events-none">
+                            min
+                          </span>
+                        </div>
+
+                        <span className="text-gym-muted text-xs flex-shrink-0">:</span>
+
+                        {/* seconds input */}
+                        <div className="relative flex-1">
+                          <input
+                            type="number"
+                            min="0"
+                            max="59"
+                            value={set.done
+                              ? (set.duration || 0) % 60
+                              : set.seconds ?? ''}
+                            onChange={e => {
+                              const secs = Math.min(parseInt(e.target.value) || 0, 59)
+                              const mins = set.minutes ?? 0
+                              updateSet(blockIdx, setIdx, 'seconds', e.target.value === '' ? '' : secs)
+                              updateSet(blockIdx, setIdx, 'duration', mins * 60 + secs)
+                            }}
+                            placeholder="0"
+                            className={`input-dark text-center py-2 text-sm pr-8
+                                        ${set.done ? 'opacity-60' : ''}`}
+                            disabled={set.done}
+                          />
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2
+                                          text-xs text-gym-muted pointer-events-none">
                             sec
                           </span>
                         </div>
-                        {/* shows "1m 30s" style conversion for longer durations */}
-                        {set.duration > 0 && (
-                          <span className="text-xs text-gym-muted flex-shrink-0">
-                            {set.duration >= 60
-                              ? `${Math.floor(set.duration / 60)}m ${set.duration % 60}s`
-                              : `${set.duration}s`}
-                          </span>
-                        )}
                       </div>
                     ) : (
                       // weight and reps inputs for standard exercises
