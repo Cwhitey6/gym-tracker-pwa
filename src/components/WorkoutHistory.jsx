@@ -34,7 +34,7 @@ export default function WorkoutHistory({ sessions, onDelete }) {
     <div className="space-y-2">
       {sessions.map((session) => {
         const isOpen = expanded === session.id
-        const date   = new Date(session.date)
+        const date = new Date(session.date + 'T00:00:00')
 
         // show "Today" if it was logged today, otherwise show the date
         const isToday   = date.toDateString() === new Date().toDateString()

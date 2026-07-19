@@ -146,7 +146,7 @@ export default function HistoryPage() {
         ) : (
           <div className="space-y-4">
             {sortedDates.map(date => {
-              const dateObj = new Date(date)
+              const dateObj = new Date(date + 'T00:00:00')
 
               // use the pre-calculated strings to avoid calling new Date() during render
               const isToday = dateObj.toDateString() === TODAY_STR

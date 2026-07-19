@@ -198,7 +198,7 @@ const YESTERDAY_STR = new Date(
 
 // a single row in the last workout list
 function SessionRow({ session }) {
-  const date = new Date(session.date)
+  const date = new Date(session.date + 'T00:00:00')
 
   const isToday     = date.toDateString() === TODAY_STR
   const isYesterday = date.toDateString() === YESTERDAY_STR
